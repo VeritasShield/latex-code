@@ -2,7 +2,7 @@
 
 ## 1. Descripción General
 Es un Userscript (Tampermonkey) inyectado en Google Docs (`https://docs.google.com/document/*`) que permite convertir selecciones de texto plano o expresiones matemáticas a código LaTeX formateado de manera profesional. Cuenta con una interfaz gráfica flotante (Shadow DOM) estructurada en pestañas, destacando un **Editor Visual Bidireccional** interactivo para matrices y un motor algorítmico de **decompilación inversa** que transforma código LaTeX complejo de vuelta a texto plano editable.
-**Versión actual**: 1.9.4.
+**Versión actual**: 1.9.5.
 
 ## 2. Stack Tecnológico
 - **Lenguaje**: TypeScript (Estricto).

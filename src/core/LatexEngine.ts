@@ -16,6 +16,7 @@ export interface LatexOptions {
     opMap: Record<string, string>;
     numOpNumOverride: Record<string, string>;
     removeDiacritics: boolean;
+    clearOnCopy: boolean;
 }
 
 export interface Token {
@@ -32,7 +33,8 @@ export const DEFAULT_OPTS: LatexOptions = {
     format: 'line', arrayN: 2, arrayAlign: 'll', arrayRowSep: 0, arrayColSep: 0,
     opMap: { '*':'\\times','/':'\\div','x':'\\times','÷':'\\div','·':'\\cdot',':':'\\times','+':'+','-':'-','^':'^','=':'=','<':'<','>':'>','≤':'\\leq','≥':'\\geq','≠':'\\neq','≈':'\\approx' },
     numOpNumOverride: { ':':'\\times','x':'\\times' },
-    removeDiacritics: true
+    removeDiacritics: true,
+    clearOnCopy: false
 };
 
 // =================================================================================

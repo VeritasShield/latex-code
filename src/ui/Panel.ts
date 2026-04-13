@@ -1,3 +1,4 @@
+import katex from 'katex';
 import { StorageService } from '../services/StorageService';
 import { h, removeChildren, clamp, toast } from '../utils/dom';
 import {
@@ -18,7 +19,8 @@ interface PanelElements {
     inpRowSep?: HTMLInputElement; inpColSep?: HTMLInputElement;
     chkPreserveLB?: HTMLInputElement; chkInsertQuad?: HTMLInputElement; chkFrac?: HTMLInputElement;
     inpAtomicLen?: HTMLInputElement; chkAutoLR?: HTMLInputElement; inpLRN?: HTMLInputElement; chkDontRewrap?: HTMLInputElement;
-    chkNoAccents?: HTMLInputElement;
+    chkNoAccents?: HTMLInputElement; chkClearOnCopy?: HTMLInputElement;
+    katexContainer?: HTMLElement;
     decRadios?: HTMLInputElement[]; wrapRadios?: HTMLInputElement[];
     selNumOpColon?: HTMLSelectElement; selNumOpX?: HTMLSelectElement; opGrid?: HTMLElement;
     tabTextBtn?: HTMLElement; tabVisBtn?: HTMLElement;
@@ -76,6 +78,9 @@ export function openPanel(): void {
 
     const root = host.attachShadow({ mode: 'open' });
 
+    const katexStyle = h('link', { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css' });
+    root.appendChild(katexStyle);
+
     const style = h('style', {}, `
       * { box-sizing: border-box; }
       :host { display: block; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; font-size: 13px; resize: both; overflow: hidden; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); background: #1e1e1e; }
@@ -126,7 +131,7 @@ export function openPanel(): void {
     `);
 
     const parenStatus = h('span', { className: 'badge', id: 'parenStatus' }, 'Bal: —');
-    const btnCopy = h('button', { className: 'btn primary', title: 'Copiar (Ctrl+C)' }, 'Copiar');
+    const btnCopy = h('button', { className: 'btn primary', title: 'Copiar texto LaTeX (Ctrl+S)' }, 'Copiar Texto');
     const btnClose = h('button', { className: 'btn warn', title: 'Cerrar (Esc)' }, 'X');
     const btnFull = h('button', { className: 'btn', title: 'Fullscreen' }, '⛶');
     const header = h('div', { className: 'header', title: 'Arrastra para mover. Doble clic para restaurar posición.' }, [ h('span', { className: 'title' }, 'LaTeX Converter'), h('span', { className: 'spacer' }), parenStatus, btnCopy, btnFull, btnClose ]);
@@ -136,12 +141,32 @@ export function openPanel(): void {
     const btnPaste = h('button', { className: 'btn' }, 'Pegar');
     const btnClear = h('button', { className: 'btn' }, 'Limpiar');
     const btnUndo = h('button', { className: 'btn', title: 'Deshacer (Restaurar anterior)' }, '↶');
+
     const sectionInput = h('div', { className: 'section' }, [ h('div', { className: 'label-head' }, 'ENTRADA'), inputTA, h('div', { className: 'actions' }, [ btnPaste, btnClear, btnUndo ]) ]);
 
     const previewTA = h('textarea', { className: 'textarea', readOnly: true, placeholder: '2. Resultado LaTeX...', style: { minHeight: '60px', color: '#8f8' } });
-    const sectionOutput = h('div', { className: 'section' }, [ h('div', { className: 'label-head' }, 'SALIDA'), previewTA ]);
+    const katexContainer = h('div', { title: 'Haz clic para copiar la imagen (PNG) al portapapeles', style: { minHeight: '40px', padding: '8px', background: '#111', borderRadius: '4px', border: '1px solid #444', overflowX: 'auto', marginTop: '6px', color: '#fff', fontSize: '1.1em', cursor: 'pointer' } });
+    
+    const btnCopyImg = h('button', { className: 'btn primary', style: { padding: '2px 6px', fontSize: '10px' }, title: 'Copiar imagen al portapapeles' }, 'Copiar Imagen');
+    const btnDownloadSVG = h('button', { className: 'btn', style: { padding: '2px 6px', fontSize: '10px' }, title: 'Descargar ecuación como SVG' }, 'SVG ↓');
+    const btnDownloadPNG = h('button', { className: 'btn', style: { padding: '2px 6px', fontSize: '10px' }, title: 'Descargar ecuación como PNG' }, 'PNG ↓');
+    const katexHeader = h('div', { className: 'row-flex', style: { marginTop: '8px', justifyContent: 'space-between', width: '100%' } }, [
+        h('div', { className: 'label-head' }, 'VISTA PREVIA (KATEX)'),
+        h('div', { className: 'row-flex', style: { gap: '4px' } }, [btnCopyImg, btnDownloadSVG, btnDownloadPNG])
+    ]);
+    const sectionOutput = h('div', { className: 'section' }, [ h('div', { className: 'label-head' }, 'SALIDA (LATEX)'), previewTA, katexHeader, katexContainer ]);
 
-    const selFormat = h('select', {}, [ h('option', { value: 'line' }, 'Línea'), h('option', { value: 'array1' }, 'Array 1 Col'), h('option', { value: 'arrayN' }, 'Array N Cols'), h('option', { value: 'gathered' }, 'Gathered') ]);
+    const selFormat = h('select', {}, [ 
+        h('option', { value: 'line' }, 'Línea'), 
+        h('option', { value: 'array1' }, 'Array 1 Col'), 
+        h('option', { value: 'arrayN' }, 'Array N Cols'), 
+        h('option', { value: 'gathered' }, 'Gathered'),
+        h('option', { value: 'aligned' }, 'Aligned'),
+        h('option', { value: 'cases' }, 'Cases'),
+        h('option', { value: 'pmatrix' }, 'Matriz ( )'),
+        h('option', { value: 'bmatrix' }, 'Matriz [ ]'),
+        h('option', { value: 'vmatrix' }, 'Determinante | |')
+    ]);
     const inpArrayN = h('input', { type: 'number', min: '1', value: '2', style: { width: '40px' } });
     const inpAlign = h('input', { type: 'text', placeholder: 'll', style: { width: '60px' } });
     const inpRowSep = h('input', { type: 'number', min: '0', max: '100', value: '0', style: { width: '40px' }, title: 'Espaciado vertical en pt' });
@@ -152,7 +177,7 @@ export function openPanel(): void {
     const chkFrac = h('input', { type: 'checkbox' }); const chkAutoLR = h('input', { type: 'checkbox' });
     const inpAtomicLen = h('input', { type: 'number', min: '1', max: '10', value: '2', style: { width: '40px' } });
     const inpLRN = h('input', { type: 'number', value: '20', style: { width: '40px' } });
-    const chkDontRewrap = h('input', { type: 'checkbox' }); const chkNoAccents = h('input', { type: 'checkbox' });
+    const chkDontRewrap = h('input', { type: 'checkbox' }); const chkNoAccents = h('input', { type: 'checkbox' }); const chkClearOnCopy = h('input', { type: 'checkbox' });
     const radDecDot = h('input', { type: 'radio', name: 'dec', value: '.' }); const radDecCom = h('input', { type: 'radio', name: 'dec', value: ',' });
     const radWrapIn = h('input', { type: 'radio', name: 'wrap', value: 'inline' }); const radWrapDis = h('input', { type: 'radio', name: 'wrap', value: 'display' });
     const detOpts = h('details', {}, [
@@ -166,7 +191,8 @@ export function openPanel(): void {
                 h('label', { className: 'chk-label', title: 'Usa \\left y \\right para ajustar dinámicamente el tamaño de los paréntesis' }, [ chkAutoLR, 'Auto Paréntesis LR' ]),
                 h('label', { className: 'chk-label', title: 'Mínimo de caracteres internos para aplicar Paréntesis LR' }, [ h('span', {}, 'Umbral LR:'), inpLRN ]),
                 h('label', { className: 'chk-label', title: 'Si el texto ya trae signos de $, no los envolverá doblemente' }, [ chkDontRewrap, 'Ignorar si tiene $' ]),
-                h('label', { className: 'chk-label', title: 'Elimina acentos y diacríticos (ej: á → a) para evitar errores en LaTeX' }, [ chkNoAccents, 'Quitar tildes' ])
+                h('label', { className: 'chk-label', title: 'Elimina acentos y diacríticos (ej: á → a) para evitar errores en LaTeX' }, [ chkNoAccents, 'Quitar tildes' ]),
+                h('label', { className: 'chk-label', title: 'Limpia automáticamente el texto de entrada tras copiar con éxito' }, [ chkClearOnCopy, 'Limpiar tras copiar' ])
             ]),
             h('div', { className: 'row-flex', style: { marginTop: '4px' } }, [
                 h('span', { title: 'Símbolo preferido para los decimales' }, 'Decimal:'), h('label', { className: 'chk-label' }, [ radDecDot, 'Punto (.)' ]), h('label', { className: 'chk-label' }, [ radDecCom, 'Coma (,)' ]),
@@ -230,7 +256,7 @@ export function openPanel(): void {
         }
     });
 
-    state.elements = { host, root, panel, input: inputTA, preview: previewTA, btnCopy, btnPaste, btnClear, btnUndo, btnClose, btnFull, parenStatus, zoomWrapper, zoomRange, zoomLabel, selFormat, inpArrayN, inpAlign, inpRowSep, inpColSep, chkPreserveLB, chkInsertQuad, chkFrac, inpAtomicLen, chkAutoLR, inpLRN, chkDontRewrap, chkNoAccents, decRadios: [radDecDot, radDecCom], wrapRadios: [radWrapIn, radWrapDis], selNumOpColon, selNumOpX, opGrid, tabTextBtn, tabVisBtn, viewText, viewVis, visualEditor, btnVisAddRow, btnVisRemRow, btnVisAddCol, btnVisRemCol, btnVisGapRowUp, btnVisGapRowDn, btnVisGapColUp, btnVisGapColDn, btnResetOpts };
+    state.elements = { host, root, panel, input: inputTA, preview: previewTA, btnCopy, btnPaste, btnClear, btnUndo, btnClose, btnFull, parenStatus, zoomWrapper, zoomRange, zoomLabel, selFormat, inpArrayN, inpAlign, inpRowSep, inpColSep, chkPreserveLB, chkInsertQuad, chkFrac, inpAtomicLen, chkAutoLR, inpLRN, chkDontRewrap, chkNoAccents, chkClearOnCopy, decRadios: [radDecDot, radDecCom], wrapRadios: [radWrapIn, radWrapDis], selNumOpColon, selNumOpX, opGrid, tabTextBtn, tabVisBtn, viewText, viewVis, visualEditor, btnVisAddRow, btnVisRemRow, btnVisAddCol, btnVisRemCol, btnVisGapRowUp, btnVisGapRowDn, btnVisGapColUp, btnVisGapColDn, btnResetOpts, katexContainer };
 
     makeDraggable(host, header);
     state.resizeObserver = new ResizeObserver(() => { if (!state.fullscreen) StorageService.saveGeom(host); });
@@ -265,6 +291,63 @@ export function openPanel(): void {
     btnClose.addEventListener('click', closePanel);
     btnFull.addEventListener('click', toggleFullscreen);
     btnCopy.addEventListener('click', copyPreview);
+
+    const getCleanImageUrl = (format: 'svg' | 'png'): string | null => {
+        const latex = state.elements.preview?.value.trim();
+        if (!latex) return null;
+        
+        let cleanLatex = latex;
+        if (cleanLatex.startsWith('$$') && cleanLatex.endsWith('$$')) cleanLatex = cleanLatex.slice(2, -2);
+        else if (cleanLatex.startsWith('\\[') && cleanLatex.endsWith('\\]')) cleanLatex = cleanLatex.slice(2, -2);
+        else if (cleanLatex.startsWith('\\(') && cleanLatex.endsWith('\\)')) cleanLatex = cleanLatex.slice(2, -2);
+        else if (cleanLatex.startsWith('$') && cleanLatex.endsWith('$') && cleanLatex !== '$') cleanLatex = cleanLatex.slice(1, -1);
+        
+        const baseUrl = format === 'svg' ? 'https://latex.codecogs.com/svg.image?\\bg_white&space;' : 'https://latex.codecogs.com/png.image?\\dpi{300}\\bg_white&space;';
+        return baseUrl + encodeURIComponent(cleanLatex);
+    };
+
+    const downloadImage = async (format: 'svg' | 'png') => {
+        const url = getCleanImageUrl(format);
+        if (!url) { toast(state.elements.root!, 'No hay ecuación para procesar', true); return; }
+        
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl; a.download = `ecuacion.${format}`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+            toast(state.elements.root!, `Descargado como ${format.toUpperCase()}`);
+        } catch (err) {
+            console.error(`[LaTeX Converter] Error al descargar ${format}:`, err);
+            toast(state.elements.root!, 'Error de red al descargar', true);
+        }
+    };
+
+    const copyImagePreview = async () => {
+        const url = getCleanImageUrl('png');
+        if (!url) { toast(state.elements.root!, 'No hay ecuación para copiar', true); return; }
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            toast(state.elements.root!, '¡Imagen PNG copiada al portapapeles!');
+        } catch (err) {
+            console.error('[LaTeX Converter] Error copiando imagen al portapapeles:', err);
+            toast(state.elements.root!, 'El navegador bloqueó la copia de la imagen', true);
+        }
+    };
+
+    btnCopyImg.addEventListener('click', copyImagePreview);
+    katexContainer.addEventListener('click', copyImagePreview);
+
+    btnDownloadSVG.addEventListener('click', () => downloadImage('svg'));
+    btnDownloadPNG.addEventListener('click', () => downloadImage('png'));
+
     btnPaste.addEventListener('click', async () => {
         try { 
             let text = await navigator.clipboard.readText();
@@ -427,6 +510,35 @@ function safeApplyPreview() {
         state.elements.preview.style.boxShadow = bal.ok ? '' : '0 0 6px rgba(239, 83, 80, 0.4)';
         
         refreshDetectedOperators();
+
+        if (state.elements.katexContainer) {
+            if (!latex.trim()) {
+                state.elements.katexContainer.innerHTML = '';
+            } else {
+                try {
+                    let katexExpr = latex.trim();
+                    if (katexExpr.startsWith('$$') && katexExpr.endsWith('$$')) {
+                        katexExpr = katexExpr.slice(2, -2);
+                    } else if (katexExpr.startsWith('\\[') && katexExpr.endsWith('\\]')) {
+                        katexExpr = katexExpr.slice(2, -2);
+                    } else if (katexExpr.startsWith('\\(') && katexExpr.endsWith('\\)')) {
+                        katexExpr = katexExpr.slice(2, -2);
+                    } else if (katexExpr.startsWith('$') && katexExpr.endsWith('$') && katexExpr !== '$') {
+                        katexExpr = katexExpr.slice(1, -1);
+                    }
+
+                    katex.render(katexExpr, state.elements.katexContainer, {
+                        displayMode: state.opts.wrapMode === 'display',
+                        throwOnError: false,
+                        errorColor: '#ef5350'
+                    });
+                } catch (err) {
+                    console.error('[LaTeX Converter] KaTeX error:', err);
+                    state.elements.katexContainer.textContent = 'Error visual';
+                }
+            }
+        }
+
         if (state.currentTab === 'visual' && !state.isVisualEditing) updateVisualEditor();
     } catch(e) { console.error("[LaTeX Converter] Err:", e); toast(state.elements.root, 'Error conversión', true); }
 }
@@ -499,6 +611,7 @@ function updateVisualEditor() {
             if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(idx, -cols); }
             else if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(idx, cols); }
             else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); moveFocus(idx, 1); }
+            else if (e.key === 'Tab') { e.preventDefault(); moveFocus(idx, e.shiftKey ? -1 : 1); }
         });
 
         cell.addEventListener('paste', (e) => {
@@ -638,12 +751,24 @@ function copyPreview() {
     const txt = state.elements.preview.value;
     if(!txt) return;
 
+    const handleAutoClear = () => {
+        if (state.opts.clearOnCopy && state.elements.input) {
+            if (state.elements.input.value) state.previousInput = state.elements.input.value;
+            state.elements.input.value = '';
+            safeApplyPreview();
+        }
+    };
+
     const fallbackCopy = () => {
         try {
             state.elements.preview!.select();
             const successful = document.execCommand('copy');
-            if (successful) toast(state.elements.root!, 'Copiado! (Fallback)');
-            else toast(state.elements.root!, 'Error al copiar', true);
+            if (successful) {
+                toast(state.elements.root!, 'Copiado! (Fallback)');
+                handleAutoClear();
+            } else {
+                toast(state.elements.root!, 'Error al copiar', true);
+            }
         } catch (err) {
             console.error('[LaTeX Converter] Fallback copy failed:', err);
             toast(state.elements.root!, 'Error crítico al copiar', true);
@@ -652,7 +777,10 @@ function copyPreview() {
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(txt)
-            .then(() => toast(state.elements.root!, 'Copiado!'))
+            .then(() => {
+                toast(state.elements.root!, 'Copiado!');
+                handleAutoClear();
+            })
             .catch(err => {
                 console.warn('[LaTeX Converter] Clipboard API failed, trying fallback:', err);
                 fallbackCopy();
@@ -702,30 +830,57 @@ function setRadio(list: HTMLInputElement[], val: string) { list.forEach(r => r.c
 function getRadio(list: HTMLInputElement[]): string | null { const f = list.find(r => r.checked); return f ? f.value : null; }
 
 function loadOptsIntoUI() {
-    const o = state.opts; const el = state.elements;
-    if(!el.selFormat || !el.decRadios || !el.wrapRadios) return;
-    el.selFormat.value = o.format || 'line'; el.inpArrayN!.value = String(o.arrayN); el.inpAlign!.value = o.arrayAlign || 'll';
-    el.inpRowSep!.value = String(o.arrayRowSep || 0); el.inpColSep!.value = String(o.arrayColSep || 0);
-    el.chkPreserveLB!.checked = !!o.preserveLineBreaks; el.chkInsertQuad!.checked = !!o.insertQuadBetweenBlocks;
-    el.chkFrac!.checked = !!o.fracAtomic; el.inpAtomicLen!.value = String(o.atomicMaxLen || 2); el.chkAutoLR!.checked = !!o.autoLeftRight; el.inpLRN!.value = String(o.autoLeftRightThreshold || 20);
-    el.chkDontRewrap!.checked = !!o.dontRewrapIfHasDollar; el.chkNoAccents!.checked = !!o.removeDiacritics;
-    setRadio(el.decRadios, o.decimal); setRadio(el.wrapRadios, o.wrapMode);
-    el.selNumOpColon!.value = o.numOpNumOverride[':'] || '\\times'; el.selNumOpX!.value = o.numOpNumOverride['x'] || '\\times';
+    try {
+        const o = state.opts; const el = state.elements;
+        if(!el.selFormat || !el.decRadios || !el.wrapRadios) return;
+        el.selFormat.value = o.format || 'line'; 
+        if (el.inpArrayN) el.inpArrayN.value = String(o.arrayN); 
+        if (el.inpAlign) el.inpAlign.value = o.arrayAlign || 'll';
+        if (el.inpRowSep) el.inpRowSep.value = String(o.arrayRowSep || 0); 
+        if (el.inpColSep) el.inpColSep.value = String(o.arrayColSep || 0);
+        if (el.chkPreserveLB) el.chkPreserveLB.checked = !!o.preserveLineBreaks; 
+        if (el.chkInsertQuad) el.chkInsertQuad.checked = !!o.insertQuadBetweenBlocks;
+        if (el.chkFrac) el.chkFrac.checked = !!o.fracAtomic; 
+        if (el.inpAtomicLen) el.inpAtomicLen.value = String(o.atomicMaxLen || 2); 
+        if (el.chkAutoLR) el.chkAutoLR.checked = !!o.autoLeftRight; 
+        if (el.inpLRN) el.inpLRN.value = String(o.autoLeftRightThreshold || 20);
+        if (el.chkDontRewrap) el.chkDontRewrap.checked = !!o.dontRewrapIfHasDollar; 
+        if (el.chkNoAccents) el.chkNoAccents.checked = !!o.removeDiacritics;
+        if (el.chkClearOnCopy) el.chkClearOnCopy.checked = !!o.clearOnCopy;
+        setRadio(el.decRadios, o.decimal); setRadio(el.wrapRadios, o.wrapMode);
+        if (el.selNumOpColon) el.selNumOpColon.value = o.numOpNumOverride[':'] || '\\times'; 
+        if (el.selNumOpX) el.selNumOpX.value = o.numOpNumOverride['x'] || '\\times';
+    } catch (e) {
+        console.error('[LaTeX Converter] Error sincronizando UI desde opciones:', e);
+    }
 }
 
 function saveOptsFromUI() {
-    const el = state.elements; const o = state.opts;
-    if(!el.selFormat || !el.decRadios || !el.wrapRadios) return;
-    o.format = el.selFormat.value || 'line'; o.arrayN = Math.max(1, parseInt(el.inpArrayN!.value || '2', 10)); o.arrayAlign = (el.inpAlign!.value || 'l'.repeat(o.arrayN)).trim();
-    o.arrayRowSep = Math.max(0, parseInt(el.inpRowSep!.value || '0', 10));
-    o.arrayColSep = Math.max(0, parseInt(el.inpColSep!.value || '0', 10));
-    o.preserveLineBreaks = !!el.chkPreserveLB!.checked; o.insertQuadBetweenBlocks = !!el.chkInsertQuad!.checked;
-    o.fracAtomic = !!el.chkFrac!.checked; o.atomicMaxLen = Math.max(1, parseInt(el.inpAtomicLen!.value || '2', 10)); o.autoLeftRight = !!el.chkAutoLR!.checked; o.autoLeftRightThreshold = Math.max(1, parseInt(el.inpLRN!.value || '20', 10));
-    o.dontRewrapIfHasDollar = !!el.chkDontRewrap!.checked; o.removeDiacritics = !!el.chkNoAccents!.checked;
-    o.decimal = getRadio(el.decRadios) || '.'; o.wrapMode = getRadio(el.wrapRadios) || 'display';
-    o.numOpNumOverride[':'] = el.selNumOpColon!.value; o.numOpNumOverride['x'] = el.selNumOpX!.value;
-    el.opGrid!.querySelectorAll<HTMLSelectElement>('.op-sel').forEach(s => { o.opMap[s.dataset.op!] = s.value; });
-    StorageService.saveOpts(o);
+    try {
+        const el = state.elements; const o = state.opts;
+        if(!el.selFormat || !el.decRadios || !el.wrapRadios) return;
+        o.format = el.selFormat.value || 'line'; 
+        if (el.inpArrayN) o.arrayN = Math.max(1, parseInt(el.inpArrayN.value || '2', 10)); 
+        if (el.inpAlign) o.arrayAlign = (el.inpAlign.value || 'l'.repeat(o.arrayN)).trim();
+        if (el.inpRowSep) o.arrayRowSep = Math.max(0, parseInt(el.inpRowSep.value || '0', 10));
+        if (el.inpColSep) o.arrayColSep = Math.max(0, parseInt(el.inpColSep.value || '0', 10));
+        if (el.chkPreserveLB) o.preserveLineBreaks = !!el.chkPreserveLB.checked; 
+        if (el.chkInsertQuad) o.insertQuadBetweenBlocks = !!el.chkInsertQuad.checked;
+        if (el.chkFrac) o.fracAtomic = !!el.chkFrac.checked; 
+        if (el.inpAtomicLen) o.atomicMaxLen = Math.max(1, parseInt(el.inpAtomicLen.value || '2', 10)); 
+        if (el.chkAutoLR) o.autoLeftRight = !!el.chkAutoLR.checked; 
+        if (el.inpLRN) o.autoLeftRightThreshold = Math.max(1, parseInt(el.inpLRN.value || '20', 10));
+        if (el.chkDontRewrap) o.dontRewrapIfHasDollar = !!el.chkDontRewrap.checked; 
+        if (el.chkNoAccents) o.removeDiacritics = !!el.chkNoAccents.checked;
+        if (el.chkClearOnCopy) o.clearOnCopy = !!el.chkClearOnCopy.checked;
+        o.decimal = getRadio(el.decRadios) || '.'; o.wrapMode = getRadio(el.wrapRadios) || 'display';
+        if (el.selNumOpColon) o.numOpNumOverride[':'] = el.selNumOpColon.value; 
+        if (el.selNumOpX) o.numOpNumOverride['x'] = el.selNumOpX.value;
+        if (el.opGrid) el.opGrid.querySelectorAll<HTMLSelectElement>('.op-sel').forEach(s => { o.opMap[s.dataset.op!] = s.value; });
+        StorageService.saveOpts(o);
+    } catch (e) {
+        console.error('[LaTeX Converter] Error guardando opciones desde UI:', e);
+    }
 }
 
 function applyFullscreenGeom(host: HTMLElement) {
